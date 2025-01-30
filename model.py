@@ -132,3 +132,33 @@ class LayerNormalization(nn.Module):
         mean = x.mean(dim = -1, keepdim=True)
         std = x.std(dim = -1, keepdim=True)
         return self.alpha * (x - mean) / (std + self.eps) + self.bias
+
+class FeedForward(nn.Module):
+    """
+    Implements the feed-forward part of the transformer layer.
+    """
+    def __init__(self, d_model: int, d_ff: int, dropout: float) -> None:
+        super().__init__()
+        self.linear_1 = nn.Linear(d_model, d_ff) # First linear layer, W1 & b1
+        self.dropout = nn.Dropout(dropout)
+        self.linear_2 = nn.Linear(d_ff, d_model) # Second linear layer, W2 & b2
+    
+    def forward(self, x):
+        """
+        Forward pass through the feed-forward layer.
+        
+        Args:
+            x: Input tensor. Shape: (batch_size, seq_len, d_model)
+            
+        Returns:
+            Output tensor. Shape: (batch_size, seq_len, d_model)
+        """
+        
+        # Visualization of the process:
+        # Input:         [x₁, x₂, x₃, x₄, ...]
+        # Linear 1:     [W₁x₁ + b₁, W₁x₂ + b₁, W₁x₃ + b₁, W₁x₄ + b₁, ...]
+        # ReLU:         [ReLU(W₁x₁ + b₁), ReLU(W₁x₂ + b₁), ReLU(W₁x₃ + b₁), ReLU(W₁x₄ + b₁), ...]
+        # Dropout:      [dropout(ReLU(W₁x₁ + b₁)), dropout(ReLU(W₁x₂ + b₁)), ...]
+        # Linear 2:     [W₂(dropout(ReLU(W₁x₁ + b₁))) + b₂, W₂(dropout(ReLU(W₁x₂ + b₁))) + b₂, ...]
+        
+        return self.linear_2(self.dropout(torch.relu(self.linear_1(x)))) # Function Composition of Layers through the feed-forward pass
