@@ -4,7 +4,7 @@ import math
 
 class InputEmbedding(nn.Module):
     """
-    A neural network module that converts token indices into continuous vector representations (embeddings).
+    NN module that converts token indices into continuous vector representations (embeddings).
     Commonly used as the first layer in transformer-based models.
     """
     def __init__(self, d_model, vocab_size):
@@ -16,7 +16,7 @@ class InputEmbedding(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.vocab_size = vocab_size
-        # PyTorch's embedding layer that converts indices into dense vectors
+        # PyTorch's embedding layer that converts indices into dense vectors. Mapping each token to a dense vector of size d_model.
         self.embedding = nn.Embedding(vocab_size, d_model)
 
     def forward(self, x):
