@@ -29,9 +29,14 @@ class InputEmbedding(nn.Module):
         Returns:
             Scaled embedding vectors. Shape: (batch_size, sequence_length, d_model)
         """
-        # Convert tokens to embeddings and multiply by sqrt(d_model); from Section 3.4 of the Transformer paper
-        # This scaling prevents dot products in attention from growing too large
-        return self.embedding(x) * math.sqrt(self.d_model) 
+        # Visualization of the process:
+        # Input tokens (indices):  [5, 2, 941, 12, ...]
+        #                           ↓   ↓    ↓    ↓
+        # Embedding lookup:       [v₅, v₂, v₉₄₁, v₁₂, ...] where each v is a d_model dimensional vector
+        #                           ↓   ↓    ↓    ↓
+        # Scaling:               [v₅, v₂, v₉₄₁, v₁₂, ...] * √(d_model)
+        
+        embeddings = self.embedding(x) * math.sqrt(self.d_model)
 
 class PositionalEncoding(nn.Module):
     """
@@ -84,10 +89,15 @@ class PositionalEncoding(nn.Module):
         Returns:
             Embeddings with positional information. Shape: (batch_size, seq_len, d_model)
         """
-        # Add positional encoding to embeddings
-        # :x.shape[1] handles variable sequence lengths up to seq_len
-        x = x + self.pe[:, :x.shape[1], :]
+        # Visualization of the process:
+        # Input embeddings:     [e₁,    e₂,    e₃,    e₄,    ...]  # each e is a d_model vector
+        # Positional encoding: +[pos₁,  pos₂,  pos₃,  pos₄,  ...]  # each pos is a d_model vector
+        #                       ↓      ↓      ↓      ↓
+        # Result:              [e₁+p₁, e₂+p₂, e₃+p₃, e₄+p₄, ...]
+        # 
+        # Where each posᵢ is composed of sine and cosine waves:
+        # posᵢ = [sin(i/10000⁰), cos(i/10000⁰), sin(i/10000²), cos(i/10000²), ...]
         
-        # Apply dropout and return
+        x = x + self.pe[:, :x.shape[1], :]
         return self.dropout(x)
 
