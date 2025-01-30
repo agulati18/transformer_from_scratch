@@ -101,3 +101,34 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.shape[1], :]
         return self.dropout(x)
 
+class LayerNormalization(nn.Module):
+    """
+    Applies layer normalization to the input tensor.
+    """
+    def __init__(self, eps: float = 1e-6) -> None:
+        super().__init__()
+        self.eps = eps
+        self.alpha = nn.Parameter(torch.ones(1)) # Scale factor (multiplicative); using Parameter to make it trainable/learnable
+        self.bias = nn.Parameter(torch.zeros(1)) # Bias term (additive)
+
+    def forward(self, x):
+        """
+        Apply layer normalisation to the input tensor.
+        
+        Args:
+            x: Input tensor. Shape: (batch_size, seq_len, d_model)
+            
+        Returns:
+            Normalized tensor. Shape: (batch_size, seq_len, d_model)
+        """
+        # Visualization of the process:
+        # Input:         [2.0,  -1.0,  5.0,   0.0]
+        # Mean:          1.5 (mean of all values)
+        # Std:          2.5 (standard deviation)
+        # Normalize:    [(2.0-1.5)/2.5, (-1.0-1.5)/2.5, (5.0-1.5)/2.5, (0.0-1.5)/2.5]
+        #              = [0.2,  -1.0,    1.4,   -0.6]
+        # Scale+Shift:  [0.2α + β, -1.0α + β, 1.4α + β, -0.6α + β]  where α=self.alpha, β=self.bias
+        
+        mean = x.mean(dim = -1, keepdim=True)
+        std = x.std(dim = -1, keepdim=True)
+        return self.alpha * (x - mean) / (std + self.eps) + self.bias
