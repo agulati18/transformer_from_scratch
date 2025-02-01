@@ -50,10 +50,6 @@ class PositionalEncoding(nn.Module):
         self.seq_len = seq_len  # Maximum sequence length
         self.dropout = nn.Dropout(dropout)
         
-        # This parameter isn't actually used - can be removed
-        self.encoding = nn.Parameter(torch.zeros(seq_len, d_model))
-        self.encoding.requires_grad = False
-
         # Initialize positional encoding matrix
         pe = torch.zeros(seq_len, d_model)
         
@@ -162,3 +158,5 @@ class FeedForward(nn.Module):
         # Linear 2:     [W₂(dropout(ReLU(W₁x₁ + b₁))) + b₂, W₂(dropout(ReLU(W₁x₂ + b₁))) + b₂, ...]
         
         return self.linear_2(self.dropout(torch.relu(self.linear_1(x)))) # Function Composition of Layers through the feed-forward pass
+
+class MultiHeadAttention(nn.Module):
