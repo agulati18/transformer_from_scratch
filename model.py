@@ -209,19 +209,19 @@ class MultiHeadAttention(nn.Module):
         # - Multiply Q with K^T (transpose) to get raw attention scores
         # - Scale by 1/√d_k to prevent softmax from having extremely small gradients
         # Shape: (..., seq_len_q, seq_len_k)
-        attention_scores = (query @ key.transpose(-2, -1)) / math.sqrt(d_k)
+        attention_scores = (query @ key.transpose(-2, -1)) / math.sqrt(d_k) # Transposes the last two dimensions of the key matrix, meaning that it swaps the last two axes. This is done to align the dimensions for the matrix multiplication
         
         # Step 2: Apply mask (if provided)
         # - Replace scores with -inf where mask is 0
         # - This ensures these positions will have ~0 probability after softmax
-        # - Useful for padding tokens or preventing future information in decoder
+        # - Purpose: Ensures that the model does not attend to padding tokens (which are added to make sequences the same length) and prevents a token from attending to future tokens in decoder self-attention
         if mask is not None:
             attention_scores = attention_scores.masked_fill(mask == 0, float('-inf'))
         
         # Step 3: Apply softmax to get attention weights
         # - Convert scores to probabilities (0 to 1)
         # - Each query will have a probability distribution over all keys
-        attention_scores = attention_scores.softmax(dim=-1)
+        attention_scores = attention_scores.softmax(dim=-1) # Applies the softmax function to the last dimension of the attention scores tensor
         
         # Step 4: Apply dropout (if provided)
         # - Randomly zero out some attention weights during training
@@ -251,8 +251,7 @@ class MultiHeadAttention(nn.Module):
         # - Query (q): "What am I looking for?"
         # - Key (k): "What do I contain?"
         # - Value (v): "What information do I give if matched?"
-        # Just like in a database query, we match queries with keys to determine 
-        # which values are important
+        # Just like in a database query, we match queries with keys to determine which values are important
         query = self.w_q(q)  # Project query
         key = self.w_k(k)    # Project key
         value = self.w_v(v)  # Project value
@@ -274,7 +273,7 @@ class MultiHeadAttention(nn.Module):
         # STEP 4: Merge heads
         # Reshape from separate heads back to single d_model dimension
         # (batch_size, heads, seq_len, d_k) -> (batch_size, seq_len, d_model)
-        x = x.transpose(1, 2)                          # Move seq_len back to position 2
+        x = x.transpose(1, 2)                         # Move seq_len back to position 2
         x = x.contiguous()                            # Ensure tensor is contiguous in memory
         x = x.view(x.shape[0], -1, self.h * self.d_k) # Combine heads
 
@@ -284,19 +283,21 @@ class MultiHeadAttention(nn.Module):
 
 class ResidualConnection(nn.Module):
     """
-    Implements the residual connection mechanism (skip connection). A safety net for our neural network.
-    If the network layer messes up, we still have the original input to fall back on.
-    Like keeping your original photo while also having an edited version.
-    
-    This helps with:
-    1. Gradient flow during backpropagation
-    2. Preservation of low-level features
-    3. Mitigation of the vanishing gradient problem
+    Implements the residual connection mechanism (skip connection). 
+    Allows information to directly flow from earlier layers to later layers, bypassing some layers in between, 
+    which helps to alleviate the vanishing gradient problem and enables training much deeper networks by facilitating 
+    better gradient flow through the network
+
+    Without the residual connections, a large part of the training signal would get lost during back-propagation. 
+    Residual connections reduce effect because summation is linear with respect to derivative, so each residual block also gets a signal 
+    that is not affected by the vanishing gradient
+
+    Another effect of residual connections is that the information stays local in the Transformer layer stack. 
+    The residual connections, however, always "remind" the representation of what the original state was.
     """
     def __init__(self, dropout: float) -> None:
         super().__init__()
         self.dropout = nn.Dropout(dropout)  # Regularization to prevent overfitting. Randomly zeros out some values during training to prevent overfitting
-
         self.norm = LayerNormalization()    # Normalizes inputs to have zero mean and unit variance
 
     def forward(self, x, sublayer):
@@ -311,3 +312,77 @@ class ResidualConnection(nn.Module):
             Tensor after applying sublayer and residual connection: x + dropout(sublayer(x))
         """
         return x + self.dropout(sublayer(x))  # Skip connection: Original input + Transformed input
+    
+class EncoderBlock(nn.Module):
+    """
+    A single encoder block in the transformer architecture.
+    Each encoder block performs these operations in sequence:
+    1. Multi-head self-attention
+    2. Add & Normalize (residual connection)
+    3. Feed-forward neural network
+    4. Add & Normalize (residual connection)
+    """
+    def __init__(self, self_attention_block: MultiHeadAttention, feed_forward_block: FeedForward, dropout: float) -> None:
+        super().__init__()
+        # First residual connection: after self-attention
+        self.residual_connection_1 = ResidualConnection(dropout)
+        # Multi-head attention layer
+        self.attention = self_attention_block
+        # Second residual connection: after feed-forward
+        self.residual_connection_2 = ResidualConnection(dropout)
+        # Feed-forward neural network
+        self.feed_forward = feed_forward_block
+
+    def forward(self, x, src_mask):
+        """
+        Process input through one encoder block.
+        
+        Args:
+            x: Input tensor (batch_size, seq_len, d_model)
+            src_mask: Mask for padding tokens (1 for tokens, 0 for padding)
+            
+        Flow:
+            1. Self-attention: Each token attends to all other tokens
+            2. Residual connection + normalisation
+            3. Feed-forward network
+            4. Residual connection + normalisation
+        """
+        # Step 1 & 2: Self-attention with residual connection
+        # - In self-attention, query, key, and value all come from the same source (x)
+        # - That's why we pass x three times: (x, x, x)
+        x = self.residual_connection_1(x, lambda x: self.attention(x, x, x, src_mask))
+        
+        # Step 3 & 4: Feed-forward with residual connection
+        # - Transform each token's representation independently
+        x = self.residual_connection_2(x, self.feed_forward)
+        return x
+
+class Encoder(nn.Module):
+    """
+    Complete encoder consisting of multiple encoder blocks stacked on top of each other.
+    The encoder processes the entire input sequence and produces contextual representations
+    for each token that incorporate information from the entire sequence.
+    """
+    def __init__(self, layers: nn.ModuleList) -> None:
+        super().__init__()
+        # Stack of encoder blocks
+        self.layers = layers
+        # Final layer normalization
+        self.norm = LayerNormalization()
+
+    def forward(self, x, mask):
+        """
+        Process input through all encoder blocks in sequence.
+        
+        Args:
+            x: Input tensor (batch_size, seq_len, d_model)
+            mask: Padding mask
+            
+        Returns:
+            Contextual representations for each token
+        """
+        # Pass input through each encoder block sequentially
+        for layer in self.layers:
+            x = layer(x, mask)
+        # Final normalization before output
+        return self.norm(x)
