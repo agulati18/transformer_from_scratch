@@ -386,3 +386,80 @@ class Encoder(nn.Module):
             x = layer(x, mask)
         # Final normalization before output
         return self.norm(x)
+
+class DecoderBlock(nn.Module):
+    """
+    A single decoder block in the transformer architecture.
+    Each decoder block contains:
+    1. Masked self-attention (prevents attending to future tokens)
+    2. Cross-attention (attends to encoder output)
+    3. Feed-forward neural network
+    Each of these has its own residual connection
+    """
+    def __init__(self, self_attention_block: MultiHeadAttention, cross_attention_block: MultiHeadAttention, feed_forward_block: FeedForward, dropout: float) -> None:
+        super().__init__()
+        # Self-attention layer: allows decoder to attend to previous positions in decoder
+        self.self_attention_block = self_attention_block
+        # Cross-attention layer: allows decoder to attend to encoder's output
+        self.cross_attention_block = cross_attention_block
+        # Feed-forward network for additional processing
+        self.feed_forward_block = feed_forward_block
+        # Three residual connections, one for each sub-layer
+        self.residual_connection_1 = ResidualConnection(dropout)  # For self-attention
+        self.residual_connection_2 = ResidualConnection(dropout)  # For cross-attention
+        self.residual_connection_3 = ResidualConnection(dropout)  # For feed-forward
+    
+    def forward(self, x, enc_output, src_mask, target_mask):
+        """
+        Process input through one decoder block.
+        
+        Args:
+            x: Input tensor from previous decoder layer or embedding
+            enc_output: Output from the encoder
+            src_mask: Mask for encoder output (padding mask)
+            target_mask: Mask for decoder self-attention (combines padding and future mask)
+        """
+        # Step 1: Self-attention with masking
+        # Uses target_mask to prevent attending to future tokens and padding
+        x = self.residual_connection_1(x, lambda x: self.self_attention_block(x, x, x, target_mask))
+        
+        # Step 2: Cross-attention with encoder output
+        # Query comes from decoder (x), Key and Value come from encoder (enc_output)
+        # This is how the decoder "looks at" the encoded source sequence
+        x = self.residual_connection_2(x, lambda x: self.cross_attention_block(x, enc_output, enc_output, src_mask))
+        
+        # Step 3: Feed-forward network
+        # Final processing of the attention outputs
+        x = self.residual_connection_3(x, self.feed_forward_block)
+        return x
+
+class Decoder(nn.Module):
+    """
+    Complete decoder consisting of multiple decoder blocks stacked on top of each other.
+    The decoder generates the output sequence one token at a time, using:
+    - Previously generated tokens
+    - Encoder's output
+    - Masking to prevent attending to future tokens
+    """
+    def __init__(self, layers: nn.ModuleList) -> None:
+        super().__init__()
+        # Stack of decoder blocks
+        self.layers = layers
+        # Final layer normalization
+        self.norm = LayerNormalization()
+
+    def forward(self, x, enc_output, src_mask, target_mask):
+        """
+        Process input through all decoder blocks in sequence.
+        
+        Args:
+            x: Input tensor (typically embedded target tokens)
+            enc_output: Output from the encoder
+            src_mask: Mask for encoder output (padding mask)
+            target_mask: Mask for decoder self-attention
+        """
+        # Pass through each decoder block sequentially
+        for layer in self.layers:
+            x = layer(x, enc_output, src_mask, target_mask)
+        # Final normalization before output
+        return self.norm(x)
