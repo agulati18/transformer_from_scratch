@@ -65,10 +65,10 @@ class PositionalEncoding(nn.Module):
         # Fill the positional encoding matrix:
         # PE(pos, 2i) = sin(pos/10000^(2i/d_model))
         # PE(pos, 2i+1) = cos(pos/10000^(2i/d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)  # Even indices get sin
-        pe[:, 1::2] = torch.cos(position * div_term)  # Odd indices get cos
+        pe[:, 0::2] = torch.sin(position * div_term)  # Even indices get sin, starting at 0 to the end of the sequence, incrementing by 2 [0,2,4,6,8]
+        pe[:, 1::2] = torch.cos(position * div_term)  # Odd indices get cos, starting at 1 to the end of the sequence, incrementing by 2 [1,3,5,7,9]
         
-        # Add batch dimension for broadcasting
+        # We will have a batch of sequences, so add batch dimension 
         # Shape changes from (seq_len, d_model) to (1, seq_len, d_model)
         pe = pe.unsqueeze(0)
         
