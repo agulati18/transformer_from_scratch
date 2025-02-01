@@ -94,6 +94,15 @@ class PositionalEncoding(nn.Module):
         # Where each posᵢ is composed of sine and cosine waves:
         # posᵢ = [sin(i/10000⁰), cos(i/10000⁰), sin(i/10000²), cos(i/10000²), ...]
         
+        # Add positional encodings to the input embeddings using broadcasting:
+        # - self.pe has shape (1, max_seq_len, d_model)
+        # - We slice it to match x's sequence length: self.pe[:, :x.shape[1], :]
+        # - The slice operation keeps all batches (:), matches sequence length (:x.shape[1]), keeps all dimensions (:)
+        # - Broadcasting: the batch dim (1) of positional encodings expands to match x's batch size
+        # - Example shapes for batch_size=32, seq_len=50, d_model=512:
+        #   * x shape:        (32, 50, 512)
+        #   * self.pe slice:  (1,  50, 512) -> broadcasts to (32, 50, 512)
+        #   * result shape:   (32, 50, 512)
         x = x + self.pe[:, :x.shape[1], :]
         return self.dropout(x)
 
@@ -104,7 +113,7 @@ class LayerNormalization(nn.Module):
     def __init__(self, eps: float = 1e-6) -> None:
         super().__init__()
         self.eps = eps
-        self.alpha = nn.Parameter(torch.ones(1)) # Scale factor (multiplicative); using Parameter to make it trainable/learnable
+        self.alpha = nn.Parameter(torch.ones(1)) # Scale factor (multiplicative); using Parameter to make it trainable/learnable (nn.Parameter)
         self.bias = nn.Parameter(torch.zeros(1)) # Bias term (additive)
 
     def forward(self, x):
@@ -125,19 +134,19 @@ class LayerNormalization(nn.Module):
         #              = [0.2,  -1.0,    1.4,   -0.6]
         # Scale+Shift:  [0.2α + β, -1.0α + β, 1.4α + β, -0.6α + β]  where α=self.alpha, β=self.bias
         
-        mean = x.mean(dim = -1, keepdim=True)
-        std = x.std(dim = -1, keepdim=True)
+        mean = x.mean(dim = -1, keepdim=True) # Mean of the last dimension (dim = -1)
+        std = x.std(dim = -1, keepdim=True) # Standard deviation of the last dimension (dim = -1)
         return self.alpha * (x - mean) / (std + self.eps) + self.bias
 
 class FeedForward(nn.Module):
     """
-    Implements the feed-forward part of the transformer layer.
+    Implements the feed-forward part of the transformer layer. Fully connected layers. Model uses this both in encoder and decoder.
     """
     def __init__(self, d_model: int, d_ff: int, dropout: float) -> None:
         super().__init__()
-        self.linear_1 = nn.Linear(d_model, d_ff) # First linear layer, W1 & b1
+        self.linear_1 = nn.Linear(d_model, d_ff) # First linear layer, W1 & b1. Bias argument is set to True by default for nn.Linear; no need to specify
         self.dropout = nn.Dropout(dropout)
-        self.linear_2 = nn.Linear(d_ff, d_model) # Second linear layer, W2 & b2
+        self.linear_2 = nn.Linear(d_ff, d_model) # Second linear layer, W2 & b2. Bias argument is set to True by default for nn.Linear; no need to specify
     
     def forward(self, x):
         """
@@ -151,12 +160,118 @@ class FeedForward(nn.Module):
         """
         
         # Visualization of the process:
-        # Input:         [x₁, x₂, x₃, x₄, ...]
-        # Linear 1:     [W₁x₁ + b₁, W₁x₂ + b₁, W₁x₃ + b₁, W₁x₄ + b₁, ...]
-        # ReLU:         [ReLU(W₁x₁ + b₁), ReLU(W₁x₂ + b₁), ReLU(W₁x₃ + b₁), ReLU(W₁x₄ + b₁), ...]
-        # Dropout:      [dropout(ReLU(W₁x₁ + b₁)), dropout(ReLU(W₁x₂ + b₁)), ...]
-        # Linear 2:     [W₂(dropout(ReLU(W₁x₁ + b₁))) + b₂, W₂(dropout(ReLU(W₁x₂ + b₁))) + b₂, ...]
+        # Input:         [x₁, x₂, x₃, x₄, ...] # shape of (batch_size, seq_len, d_model)
+        # Linear 1:     [W₁x₁ + b₁, W₁x₂ + b₁, W₁x₃ + b₁, W₁x₄ + b₁, ...] # shape of (batch_size, seq_len, d_ff)
+        # ReLU:         [ReLU(W₁x₁ + b₁), ReLU(W₁x₂ + b₁), ReLU(W₁x₃ + b₁), ReLU(W₁x₄ + b₁), ...] # shape of (batch_size, seq_len, d_ff)
+        # Dropout:      [dropout(ReLU(W₁x₁ + b₁)), dropout(ReLU(W₁x₂ + b₁)), ...] # shape of (batch_size, seq_len, d_ff)
+        # Linear 2:     [W₂(dropout(ReLU(W₁x₁ + b₁))) + b₂, W₂(dropout(ReLU(W₁x₂ + b₁))) + b₂, ...] # shape of (batch_size, seq_len, d_model)
         
         return self.linear_2(self.dropout(torch.relu(self.linear_1(x)))) # Function Composition of Layers through the feed-forward pass
 
 class MultiHeadAttention(nn.Module):
+    """
+    Implements the multi-head attention mechanism.
+    """
+    def __init__(self, d_model: int, h: int, dropout: float) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.h = h
+        assert d_model % h == 0, "d_model must be divisible by h"
+
+        self.d_k = d_model // h
+        self.w_q = nn.Linear(d_model, d_model) # Wq
+        self.w_k = nn.Linear(d_model, d_model) # Wk
+        self.w_v = nn.Linear(d_model, d_model) # Wv
+        
+        self.w_o = nn.Linear(d_model, d_model) # Wo, h * d_v = d_model
+
+        self.dropout = nn.Dropout(dropout)
+    
+    @staticmethod # Static method is a method that belongs to the class itself, not an instance of the class. So it can be called without creating an instance of the class.
+    def attention(query, key, value, mask=None, dropout: nn.Dropout):
+        """
+        Compute scaled dot-product attention: Attention(Q,K,V) = softmax(QK^T/√d_k)V
+        
+        Args:
+            query: Query matrix (Q). Shape: (..., seq_len_q, d_k)
+            key: Key matrix (K). Shape: (..., seq_len_k, d_k)
+            value: Value matrix (V). Shape: (..., seq_len_k, d_v)
+            mask: Optional mask to prevent attention to certain positions. Shape: (..., seq_len_q, seq_len_k)
+            dropout: Optional dropout layer
+            
+        Returns:
+            tuple: (weighted sum of values, attention weights)
+        """
+        # Get the dimension of the key vectors (used for scaling)
+        d_k = query.size(-1)
+        
+        # Step 1: Calculate attention scores
+        # - Multiply Q with K^T (transpose) to get raw attention scores
+        # - Scale by 1/√d_k to prevent softmax from having extremely small gradients
+        # Shape: (..., seq_len_q, seq_len_k)
+        attention_scores = (query @ key.transpose(-2, -1)) / math.sqrt(d_k)
+        
+        # Step 2: Apply mask (if provided)
+        # - Replace scores with -inf where mask is 0
+        # - This ensures these positions will have ~0 probability after softmax
+        # - Useful for padding tokens or preventing future information in decoder
+        if mask is not None:
+            attention_scores = attention_scores.masked_fill(mask == 0, float('-inf'))
+        
+        # Step 3: Apply softmax to get attention weights
+        # - Convert scores to probabilities (0 to 1)
+        # - Each query will have a probability distribution over all keys
+        attention_scores = attention_scores.softmax(dim=-1)
+        
+        # Step 4: Apply dropout (if provided)
+        # - Randomly zero out some attention weights during training
+        # - Helps prevent overfitting
+        if dropout is not None:
+            attention_scores = dropout(attention_scores)
+        
+        # Step 5: Multiply attention weights with values
+        # - Weighted sum of values based on attention weights
+        # - First output: weighted values. Shape: (..., seq_len_q, d_v)
+        # - Second output: attention weights (useful for visualization)
+        return torch.matmul(attention_scores, value), attention_scores
+    
+    def forward(self, q, k, v, mask=None):
+        """
+        Multi-head attention forward pass.
+        
+        Args:
+            q, k, v: Query, Key, and Value tensors (batch_size, seq_len, d_model)
+            mask: Optional attention mask
+        Returns:
+            Output tensor (batch_size, seq_len, d_model)
+        """
+        # STEP 1: Linear Projections
+        # Transform input tensors into query, key, and value representations
+        query = self.w_q(q)  # Project query
+        key = self.w_k(k)    # Project key
+        value = self.w_v(v)  # Project value
+
+        # STEP 2: Split heads
+        # Reshape tensors to separate the heads dimension
+        # Example for batch_size=32, seq_len=50, h=8, d_model=512:
+        # Input shape:  (32, 50, 512)
+        # Split shape:  (32, 50, 8, 64)  # 512 split into 8 heads of 64 dimensions
+        # Final shape:  (32, 8, 50, 64)  # Transpose to put heads dimension second
+        query = query.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(1, 2)
+        key = key.view(key.shape[0], key.shape[1], self.h, self.d_k).transpose(1, 2)
+        value = value.view(value.shape[0], value.shape[1], self.h, self.d_k).transpose(1, 2)
+
+        # STEP 3: Apply Attention
+        # Calculate attention scores and get weighted values
+        x, self.attention_scores = MultiHeadAttention.attention(query, key, value, mask, self.dropout)
+
+        # STEP 4: Merge heads
+        # Reshape from separate heads back to single d_model dimension
+        # (batch_size, heads, seq_len, d_k) -> (batch_size, seq_len, d_model)
+        x = x.transpose(1, 2)                          # Move seq_len back to position 2
+        x = x.contiguous()                            # Ensure tensor is contiguous in memory
+        x = x.view(x.shape[0], -1, self.h * self.d_k) # Combine heads
+
+        # STEP 5: Final Linear Projection
+        # Transform the merged heads back to d_model dimensions
+        return self.w_o(x)
