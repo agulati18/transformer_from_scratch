@@ -247,6 +247,12 @@ class MultiHeadAttention(nn.Module):
         """
         # STEP 1: Linear Projections
         # Transform input tensors into query, key, and value representations
+        # Creating 3 different "views" of the same input:
+        # - Query (q): "What am I looking for?"
+        # - Key (k): "What do I contain?"
+        # - Value (v): "What information do I give if matched?"
+        # Just like in a database query, we match queries with keys to determine 
+        # which values are important
         query = self.w_q(q)  # Project query
         key = self.w_k(k)    # Project key
         value = self.w_v(v)  # Project value
@@ -275,3 +281,33 @@ class MultiHeadAttention(nn.Module):
         # STEP 5: Final Linear Projection
         # Transform the merged heads back to d_model dimensions
         return self.w_o(x)
+
+class ResidualConnection(nn.Module):
+    """
+    Implements the residual connection mechanism (skip connection). A safety net for our neural network.
+    If the network layer messes up, we still have the original input to fall back on.
+    Like keeping your original photo while also having an edited version.
+    
+    This helps with:
+    1. Gradient flow during backpropagation
+    2. Preservation of low-level features
+    3. Mitigation of the vanishing gradient problem
+    """
+    def __init__(self, dropout: float) -> None:
+        super().__init__()
+        self.dropout = nn.Dropout(dropout)  # Regularization to prevent overfitting. Randomly zeros out some values during training to prevent overfitting
+
+        self.norm = LayerNormalization()    # Normalizes inputs to have zero mean and unit variance
+
+    def forward(self, x, sublayer):
+        """
+        Applies sublayer to input, then adds the result to the original input.
+        
+        Args:
+            x: Input tensor
+            sublayer: Neural network layer/function to be applied (e.g., self-attention or feed-forward)
+            
+        Returns:
+            Tensor after applying sublayer and residual connection: x + dropout(sublayer(x))
+        """
+        return x + self.dropout(sublayer(x))  # Skip connection: Original input + Transformed input
