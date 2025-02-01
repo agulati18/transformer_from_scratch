@@ -229,7 +229,7 @@ class MultiHeadAttention(nn.Module):
         if dropout is not None:
             attention_scores = dropout(attention_scores)
         
-        # Step 5: Multipl attention weights with values
+        # Step 5: Multiply attention weights with values
         # - Weighted sum of values based on attention weights
         # - First output: weighted values. Shape: (..., seq_len_q, d_v)
         # - Second output: attention weights (useful for visualization)
