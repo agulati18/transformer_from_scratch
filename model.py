@@ -176,14 +176,14 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.h = h
-        assert d_model % h == 0, "d_model must be divisible by h"
+        assert d_model % h == 0, "d_model must be divisible by h" # Ensures that the number of dimensions in the input can be evenly divided into heads (no remainder)
 
         self.d_k = d_model // h
         self.w_q = nn.Linear(d_model, d_model) # Wq
         self.w_k = nn.Linear(d_model, d_model) # Wk
         self.w_v = nn.Linear(d_model, d_model) # Wv
         
-        self.w_o = nn.Linear(d_model, d_model) # Wo, h * d_v = d_model
+        self.w_o = nn.Linear(d_model, d_model) # Wo, h * d_v = d_model - d_v is the same as d_k (d_model/h). Given this, d_v = d_k = d_model/h, so h * d_v = d_model
 
         self.dropout = nn.Dropout(dropout)
     
