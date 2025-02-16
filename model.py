@@ -595,3 +595,15 @@ def build_transformer(src_vocab_size: int, target_vocab_size: int, src_seq_len: 
     transformer = Transformer(encoder, decoder, src_embed, target_embed, src_pos, target_pos, projection_layer)
     return transformer  
 
+# #Example usage:
+# src_vocab_size = 10000
+# target_vocab_size = 10000
+# src_seq_len = 100
+# target_seq_len = 100
+# d_model = 512
+# N = 6
+# h = 8
+# dropout = 0.1
+# d_ff = 2048
+
+# transformer = build_transformer(src_vocab_size, target_vocab_size, src_seq_len, target_seq_len, d_model, N, h, dropout, d_ff)
