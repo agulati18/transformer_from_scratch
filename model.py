@@ -416,8 +416,8 @@ class DecoderBlock(nn.Module):
         Args:
             x: Input tensor from previous decoder layer or embedding
             enc_output: Output from the encoder
-            src_mask: Mask for encoder output (padding mask)
-            target_mask: Mask for decoder self-attention (combines padding and future mask)
+            src_mask: Mask for encoder output (padding mask; source language)
+            target_mask: Mask for decoder self-attention (combines padding and future mask; target language)
         """
         # Step 1: Self-attention with masking
         # Uses target_mask to prevent attending to future tokens and padding
@@ -461,5 +461,28 @@ class Decoder(nn.Module):
         # Pass through each decoder block sequentially
         for layer in self.layers:
             x = layer(x, enc_output, src_mask, target_mask)
-        # Final normalization before output
+        # Final normalisation before output
         return self.norm(x)
+
+class ProjectionLayer(nn.Module):
+    """
+    Projects the output of the decoder to the final output space (a Linear layer)
+    """
+    def __init__(self, d_model: int, vocab_size: int) -> None:
+        super().__init__()
+        self.proj = nn.Linear(d_model, vocab_size)
+
+    def forward(self, x):
+        # Perform a linear transformation on the input tensor x.
+        # This transformation is done using a weight matrix (self.proj) and a bias vector.
+        # The output tensor will have the same shape as the input tensor x.
+        
+        # After the linear transformation, apply the log softmax function.
+        # Log softmax converts the output into a probability distribution,
+        # ensuring that the sum of probabilities across the output is 1.
+        # Using log softmax is numerically stable and helps prevent overflow issues.
+
+        return torch.log_softmax(self.proj(x), dim=-1)
+
+class Transformer(nn.Module):
+    def __init__(self, encoder: Encoder, decoder: Decoder, src_embed: InputEmbedding, target_embed: InputEmbedding, src_pos: PositionalEncoding, target_pos: PositionalEncoding, projection_layer: ProjectionLayer):
