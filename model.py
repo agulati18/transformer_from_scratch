@@ -485,4 +485,74 @@ class ProjectionLayer(nn.Module):
         return torch.log_softmax(self.proj(x), dim=-1)
 
 class Transformer(nn.Module):
+    """
+    The Transformer class encapsulates the entire transformer architecture,
+    which is designed for sequence-to-sequence tasks like translation.
+    It consists of an encoder to process the input sequence and a decoder
+    to generate the output sequence, along with embedding and positional encoding layers.
+    """
     def __init__(self, encoder: Encoder, decoder: Decoder, src_embed: InputEmbedding, target_embed: InputEmbedding, src_pos: PositionalEncoding, target_pos: PositionalEncoding, projection_layer: ProjectionLayer):
+        """
+        Initializes the components of the Transformer model.
+
+        Args:
+            encoder: The encoder part of the transformer, which processes the input sequence.
+            decoder: The decoder part of the transformer, which generates the output sequence.
+            src_embed: Embedding layer that converts source token indices into dense vectors.
+            target_embed: Embedding layer that converts target token indices into dense vectors.
+            src_pos: Positional encoding layer for the source tokens, providing information about token positions.
+            target_pos: Positional encoding layer for the target tokens, providing information about token positions.
+            projection_layer: A linear layer that maps the decoder output to the vocabulary size for generating probabilities.
+        """
+        super().__init__()
+        self.encoder = encoder  # The encoder processes the input sequence to create contextual representations.
+        self.decoder = decoder  # The decoder generates the output sequence based on the encoder's output and previous tokens.
+        self.src_embed = src_embed  # Converts source token indices into embeddings for the encoder.
+        self.target_embed = target_embed  # Converts target token indices into embeddings for the decoder.
+        self.src_pos = src_pos  # Adds positional information to the source embeddings to maintain order.
+        self.target_pos = target_pos  # Adds positional information to the target embeddings to maintain order.
+        self.projection_layer = projection_layer  # Maps the decoder's output to the vocabulary size for final predictions.
+
+    def encode(self, src, src_mask):
+        """
+        Encodes the source input through the embedding and encoder layers.
+
+        Args:
+            src: Input tensor containing source token indices (e.g., words in a sentence).
+            src_mask: Mask to prevent attention to padding tokens in the source, ensuring the model focuses on actual tokens.
+
+        Returns:
+            Encoded representation of the source input, which captures the context of each token in the sequence.
+        """
+        src = self.src_embed(src)  # Convert source token indices to dense vector embeddings.
+        src = self.src_pos(src)  # Add positional encoding to the embeddings to inform the model of token positions.
+        return self.encoder(src, src_mask)  # Pass the enriched embeddings through the encoder to get contextual representations.
+
+    def decode(self, target, target_mask, enc_output, src_mask):
+        """
+        Decodes the target input through the embedding and decoder layers.
+
+        Args:
+            target: Input tensor containing target token indices (e.g., words in the output sentence).
+            target_mask: Mask to prevent attention to future tokens in the target, ensuring the model only attends to past tokens.
+            enc_output: Output from the encoder, which provides context for the decoder to generate the output.
+            src_mask: Mask for the source input to ensure proper attention during decoding.
+
+        Returns:
+            Decoded representation of the target input, which is influenced by both the previous tokens and the encoder's output.
+        """
+        target = self.target_embed(target)  # Convert target token indices to dense vector embeddings.
+        target = self.target_pos(target)  # Add positional encoding to the target embeddings to maintain order.
+        return self.decoder(target, enc_output, target_mask, src_mask)  # Pass through the decoder to generate the output sequence.
+
+    def project(self, x):
+        """
+        Projects the decoder output to the final output space.
+
+        Args:
+            x: Input tensor from the decoder, representing the current state of the output sequence.
+
+        Returns:
+            Log softmax probabilities over the vocabulary, indicating the likelihood of each token being the next in the sequence.
+        """
+        return self.projection_layer(x)  # Apply the projection layer to convert decoder outputs into probabilities for each token in the vocabulary.
