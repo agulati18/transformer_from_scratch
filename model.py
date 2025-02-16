@@ -556,3 +556,42 @@ class Transformer(nn.Module):
             Log softmax probabilities over the vocabulary, indicating the likelihood of each token being the next in the sequence.
         """
         return self.projection_layer(x)  # Apply the projection layer to convert decoder outputs into probabilities for each token in the vocabulary.
+
+def build_transformer(src_vocab_size: int, target_vocab_size: int, src_seq_len: int, target_seq_len: int, d_model: int = 512, N: int = 6, h: int = 8, dropout: float = 0.1, d_ff: int = 2048) -> 'Transformer':
+    # Create embedding layers for source and target languages
+    # Transform token indices into dense vector representations.
+    src_embed = InputEmbedding(d_model, src_vocab_size)
+    target_embed = InputEmbedding(d_model, target_vocab_size)
+
+    # Create positional encoding layers for source and target languages
+    # Encode the position of tokens to maintain their order in sequences.
+    src_pos = PositionalEncoding(d_model, src_seq_len, dropout)
+    target_pos = PositionalEncoding(d_model, target_seq_len, dropout)
+
+    # Create encoder layers
+    # Stack multiple encoder blocks to process the input data.
+    encoder_blocks = []
+    for _ in range(N):
+        # Each block includes attention and feed-forward layers for learning.
+        encoder_block = EncoderBlock(MultiHeadAttention(h, d_model, dropout), FeedForward(d_model, d_ff, dropout), dropout)
+        encoder_blocks.append(encoder_block)
+    
+    # Combine all encoder blocks into a single Encoder module
+    encoder = Encoder(nn.ModuleList(encoder_blocks))
+
+    # Create decoder layers
+    decoder_blocks = []
+    for _ in range(N):
+        decoder_block = DecoderBlock(MultiHeadAttention(h, d_model, dropout), MultiHeadAttention(h, d_model, dropout), FeedForward(d_model, d_ff, dropout), dropout)
+        decoder_blocks.append(decoder_block)
+
+    # Combine all decoder blocks into a single Decoder module
+    decoder = Decoder(nn.ModuleList(decoder_blocks))
+
+    # Create projection layer for final output - maps the decoder output to the vocabulary size for generating probabilities.
+    projection_layer = ProjectionLayer(d_model, target_vocab_size)
+
+    # Create the Transformer model by combining all components
+    transformer = Transformer(encoder, decoder, src_embed, target_embed, src_pos, target_pos, projection_layer)
+    return transformer  
+
