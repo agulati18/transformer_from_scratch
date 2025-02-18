@@ -58,7 +58,36 @@ class BilingualDataset(Dataset):
         assert len(label) == self.seq_len, "Label size mismatch"
 
         return {
-            "enc_input": torch.tensor(enc_input, dtype=torch.int64),
-            "dec_input": torch.tensor(dec_input, dtype=torch.int64),
-            "label": torch.tensor(label, dtype=torch.int64),
+            # Convert the encoded source input to a tensor
+            "enc_input": torch.tensor(enc_input, dtype=torch.int64),  # (Seq_Len number of tokens)
+            
+            # Convert the encoded target input to a tensor
+            "dec_input": torch.tensor(dec_input, dtype=torch.int64),  # (Seq_Len number of tokens)
+            
+            # Create a mask for the encoder input to identify padding tokens
+            "encoder_mask": (enc_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(),  # Mask where pad tokens are 0
+            
+            # Create a mask for the decoder input to identify padding tokens and apply causal masking
+            "decoder_mask": (dec_input != self.pad_token).unsqueeze(0).unsqueeze(0).int() & causal_mask(dec_input.size(0)),  # Mask where pad tokens are 0, with causal masking
+            
+            # Convert the target labels to a tensor, including the end token and padding
+            "label": torch.tensor(label, dtype=torch.int64)  # (Seq_Len number of tokens)
+
+            # Store the original source and target texts for debugging
+            "src_text": src_text,
+            "tgt_text": tgt_text
         }
+
+    def causal_mask(size):
+        mask = torch.triu(torch.ones(1, size, size), diagonal=1).type(torch.int)
+        # Create a 2D tensor of shape (1, size, size) filled with ones.
+        # Use torch.triu to get the upper triangular part of the tensor,
+        # setting all elements below the diagonal to zero. The diagonal itself is excluded
+        # from the upper triangular part due to diagonal=1.
+
+        return mask == 0
+        # Return a boolean mask where elements that are zero in the 'mask' tensor are marked as True,
+        # and elements that are one are marked as False. This indicates which positions in the sequence
+        # can be attended to during decoding, preventing the model from attending to future tokens.
+    
+
